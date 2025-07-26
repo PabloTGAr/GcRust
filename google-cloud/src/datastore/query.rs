@@ -1,5 +1,5 @@
-use crate::datastore::Value;
 use super::{IntoValue, Key};
+use crate::datastore::Value;
 
 /// Represents Datastore query result orderings.
 #[derive(Debug, Clone, PartialEq)]
@@ -18,11 +18,11 @@ pub enum Filter {
     /// Greater-than filter (>).
     GreaterThan(String, Value),
     /// Lesser-than filter (<).
-    LesserThan(String, Value),
+    LessThan(String, Value),
     /// Greater-than-or-equal filter (>=).
     GreaterThanOrEqual(String, Value),
     /// Lesser-than-or-equal filter (<=).
-    LesserThanEqual(String, Value),
+    LessThanOrEqual(String, Value),
     /// Append ancestor to the Query
     HasAncestor(Value),
     /// In
@@ -31,6 +31,15 @@ pub enum Filter {
     NotIn(String, Value),
     /// NotEqual
     NotEqual(String, Value),
+}
+
+/// A filter that merges multiple other filters using the given operator.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CompositeFilter {
+    /// The results are required to satisfy each of the combined filters.
+    And,
+    /// Documents are required to satisfy at least one of the combined filters.
+    Or,
 }
 
 /// Represents a Datastore query.
@@ -47,6 +56,7 @@ pub struct Query {
     pub(crate) ordering: Vec<Order>,
     pub(crate) filters: Vec<Filter>,
     pub(crate) cursor: Option<Vec<u8>>,
+    pub(crate) composite_filter: CompositeFilter,
 }
 
 impl Query {
@@ -69,6 +79,7 @@ impl Query {
             ordering: Vec::new(),
             filters: Vec::new(),
             cursor: None,
+            composite_filter: CompositeFilter::And,
         }
     }
 
@@ -161,8 +172,7 @@ impl Query {
         T: Into<String>,
     {
         self.projections.clear();
-        self.projections
-            .extend(projections.into_iter().map(Into::into));
+        self.projections.extend(projections.into_iter().map(Into::into));
         self
     }
 
@@ -215,16 +225,32 @@ impl Query {
         self
     }
 
-    /// We indicate by which entity the search begins, with this we can 
+    /// We indicate by which entity the search begins, with this we can
     /// implement a pagination system
-    /// 
+    ///
     /// ```
     /// let query = Query::new("users")
     ///     .cursor(cursor);
     /// ```
-    /// 
+    ///
     pub fn cursor(mut self, cursor: Vec<u8>) -> Query {
         self.cursor = Some(cursor);
+        self
+    }
+
+    /// A filter that merges multiple other filters using the given operator.
+    ///
+    /// ```
+    /// # use google_cloud::datastore::Query;
+    /// use google_cloud::datastore::{Filter, Value, IntoValue};
+    ///
+    /// let query = Query::new("users")
+    ///     .filter(Filter::GreaterThan("age".into(), 10.into_value()))
+    ///     .filter(Filter::Equal("firstname".into(), "john".into_value()))
+    ///     .composite_filter(CompositeFilter::Or);
+    /// ```
+    pub fn composite_filter(mut self, composite_filter: CompositeFilter) -> Query {
+        self.composite_filter = composite_filter;
         self
     }
 }

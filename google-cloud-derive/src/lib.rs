@@ -62,6 +62,9 @@ struct FieldContainer {
     pub ident: Option<syn::Ident>,
     #[darling(default)]
     pub rename: Option<String>,
+    #[darling(default)]
+    pub default: Option<syn::Lit>,
+    pub ty: syn::Type,
 }
 
 fn derive_into_value_struct(
@@ -69,10 +72,7 @@ fn derive_into_value_struct(
     fields: Vec<FieldContainer>,
     rename_all: RenameAll,
 ) -> TokenStream {
-    let idents: Vec<syn::Ident> = fields
-        .iter()
-        .map(|field| field.ident.clone().unwrap())
-        .collect();
+    let idents: Vec<syn::Ident> = fields.iter().map(|field| field.ident.clone().unwrap()).collect();
     let names: Vec<syn::LitStr> = fields
         .into_iter()
         .map(|field| {
@@ -104,10 +104,7 @@ fn derive_into_value_enum(
     variants: Vec<VariantContainer>,
     rename_all: RenameAll,
 ) -> TokenStream {
-    let idents: Vec<syn::Ident> = variants
-        .iter()
-        .map(|variant| variant.ident.clone())
-        .collect();
+    let idents: Vec<syn::Ident> = variants.iter().map(|variant| variant.ident.clone()).collect();
     let names: Vec<syn::LitStr> = variants
         .into_iter()
         .map(|variant| {
@@ -148,50 +145,155 @@ pub fn derive_into_value(input: TokenStream) -> TokenStream {
     }
 }
 
+// fn derive_from_value_struct(
+//     ident: syn::Ident,
+//     fields: Vec<FieldContainer>,
+//     rename_all: RenameAll,
+// ) -> TokenStream {
+//     let idents: Vec<syn::Ident> = fields.iter().map(|field| field.ident.clone().unwrap()).collect();
+//     // let mut prueba = HashMap::new();
+//     let names: Vec<syn::LitStr> = fields
+//         .into_iter()
+//         .map(|field| {
+//             let renamed = field.rename.to_owned();
+//             let field = field.ident.unwrap();
+//             let span = field.span();
+//             let name = renamed.unwrap_or_else(|| transform_field_casing(field, rename_all));
+//             syn::LitStr::new(name.as_str(), span)
+//         })
+//         .collect();
+
+//     let tokens = quote! {
+//         impl ::google_cloud::datastore::FromValue for #ident {
+//             fn from_value(value: ::google_cloud::datastore::Value) -> ::std::result::Result<#ident, ::google_cloud::error::ConvertError> {
+//                 // dbg!(value.to_owned());
+//                 let mut props = match value {
+//                     ::google_cloud::datastore::Value::EntityValue(props) => props,
+//                     _ => return ::std::result::Result::Err(
+//                         ::google_cloud::error::ConvertError::UnexpectedPropertyType {
+//                             expected: ::std::string::String::from("entity"),
+//                             got: ::std::string::String::from(value.type_name()),
+//                         }
+//                     ),
+//                 };
+//                 let value = #ident {
+//                     #(#idents: {
+//                         let prop = props
+//                             .remove(#names)
+//                             .ok_or_else(|| {
+//                                 ::google_cloud::error::ConvertError::MissingProperty(::std::string::String::from(#names))
+//                             })?;
+//                         let value = ::google_cloud::datastore::FromValue::from_value(prop)?;
+//                         value
+//                     },)*
+//                 };
+//                 ::std::result::Result::Ok(value)
+//             }
+//         }
+//     };
+
+//     tokens.into()
+// }
+
 fn derive_from_value_struct(
     ident: syn::Ident,
     fields: Vec<FieldContainer>,
     rename_all: RenameAll,
 ) -> TokenStream {
-    let idents: Vec<syn::Ident> = fields
-        .iter()
-        .map(|field| field.ident.clone().unwrap())
-        .collect();
-    let names: Vec<syn::LitStr> = fields
-        .into_iter()
-        .map(|field| {
-            let renamed = field.rename;
-            let field = field.ident.unwrap();
-            let span = field.span();
-            let name = renamed.unwrap_or_else(|| transform_field_casing(field, rename_all));
-            syn::LitStr::new(name.as_str(), span)
-        })
-        .collect();
+    let field_bindings = fields.iter().map(|field| {
+        let field_ident = field.ident.as_ref().unwrap();
+        let field_name = syn::LitStr::new(
+            &field.rename.clone().unwrap_or_else(|| transform_field_casing(field_ident.clone(), rename_all)),
+            field_ident.span(),
+        );
+        let field_ty = &field.ty;
+
+        let assign_value = if let Some(default) = &field.default {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => #default,
+                };
+            }
+        } else if is_option_type(field_ty) {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => None,
+                };
+            }
+        } else if is_string_type(field_ty) {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => ::std::string::String::new(),
+                };
+            }
+        } else if is_bool_type(field_ty) {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => false,
+                };
+            }
+        } else if is_i64_type(field_ty) {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => 0,
+                };
+            }
+        } else if is_f64_type(field_ty) {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => 0.0,
+                };
+            }
+        } else if is_vec_type(field_ty) {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => ::std::vec::Vec::new(),
+                };
+            }
+        } else if is_naivedatetime_type(field_ty) {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => ::chrono::NaiveDateTime::from_timestamp(0, 0),
+                };
+            }
+        } else {
+            quote! {
+                let #field_ident = match props.remove(#field_name) {
+                    Some(value) => ::google_cloud::datastore::FromValue::from_value(value)?,
+                    None => return Err(::google_cloud::error::ConvertError::MissingProperty(#field_name.to_string())),
+                };
+            }
+        };
+
+        assign_value
+    });
+
+    let field_names: Vec<_> = fields.iter().map(|f| f.ident.as_ref().unwrap()).collect();
 
     let tokens = quote! {
         impl ::google_cloud::datastore::FromValue for #ident {
             fn from_value(value: ::google_cloud::datastore::Value) -> ::std::result::Result<#ident, ::google_cloud::error::ConvertError> {
                 let mut props = match value {
                     ::google_cloud::datastore::Value::EntityValue(props) => props,
-                    _ => return ::std::result::Result::Err(
-                        ::google_cloud::error::ConvertError::UnexpectedPropertyType {
-                            expected: ::std::string::String::from("entity"),
-                            got: ::std::string::String::from(value.type_name()),
-                        }
-                    ),
+                    _ => return Err(::google_cloud::error::ConvertError::UnexpectedPropertyType {
+                        expected: "entity".to_string(),
+                        got: value.type_name().to_string(),
+                    }),
                 };
-                let value = #ident {
-                    #(#idents: {
-                        let prop = props
-                            .remove(#names)
-                            .ok_or_else(|| {
-                                ::google_cloud::error::ConvertError::MissingProperty(::std::string::String::from(#names))
-                            })?;
-                        let value = ::google_cloud::datastore::FromValue::from_value(prop)?;
-                        value
-                    },)*
-                };
-                ::std::result::Result::Ok(value)
+
+                #(#field_bindings)*
+
+                Ok(#ident {
+                    #(#field_names),*
+                })
             }
         }
     };
@@ -199,15 +301,46 @@ fn derive_from_value_struct(
     tokens.into()
 }
 
+fn is_option_type(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(type_path) if type_path.path.segments.first().map(|s| s.ident == "Option").unwrap_or(false))
+}
+
+fn is_string_type(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(type_path) if type_path.path.is_ident("String"))
+}
+
+fn is_bool_type(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(type_path) if type_path.path.is_ident("bool"))
+}
+
+fn is_i64_type(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(type_path) if type_path.path.is_ident("i64"))
+}
+
+fn is_f64_type(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(type_path) if type_path.path.is_ident("f64"))
+}
+
+fn is_vec_type(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(type_path) if {
+        let path = &type_path.path;
+        path.segments.first().map(|s| s.ident == "Vec").unwrap_or(false)
+    })
+}
+
+fn is_naivedatetime_type(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(type_path) if {
+        let segments = &type_path.path.segments;
+        segments.last().map(|s| s.ident == "NaiveDateTime").unwrap_or(false)
+    })
+}
+
 fn derive_from_value_enum(
     ident: syn::Ident,
     variants: Vec<VariantContainer>,
     rename_all: RenameAll,
 ) -> TokenStream {
-    let idents: Vec<syn::Ident> = variants
-        .iter()
-        .map(|variant| variant.ident.clone())
-        .collect();
+    let idents: Vec<syn::Ident> = variants.iter().map(|variant| variant.ident.clone()).collect();
     let names: Vec<syn::LitStr> = variants
         .into_iter()
         .map(|variant| {

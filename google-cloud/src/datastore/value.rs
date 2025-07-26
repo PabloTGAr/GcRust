@@ -144,17 +144,15 @@ impl IntoValue for NaiveDateTime {
     }
 }
 
-impl<T> IntoValue for Option<T> 
+impl<T> IntoValue for Option<T>
 where
     T: IntoValue,
 {
     fn into_value(self) -> Value {
-        Value::OptionValue(
-            match self {
-                Some(x) => Some(Box::new(x.into_value())),
-                None => None
-            }
-        )
+        Value::OptionValue(match self {
+            Some(x) => Some(Box::new(x.into_value())),
+            None => None,
+        })
     }
 }
 
@@ -350,9 +348,9 @@ impl From<ValueType> for Value {
             ValueType::BooleanValue(val) => Value::BooleanValue(val),
             ValueType::IntegerValue(val) => Value::IntegerValue(val),
             ValueType::DoubleValue(val) => Value::DoubleValue(val),
-            ValueType::TimestampValue(val) => {
-                Value::TimestampValue(NaiveDateTime::from_timestamp(val.seconds, val.nanos as u32))
-            }
+            ValueType::TimestampValue(val) => Value::TimestampValue(
+                NaiveDateTime::from_timestamp_opt(val.seconds, val.nanos as u32).unwrap(),
+            ),
             ValueType::KeyValue(key) => Value::KeyValue(Key::from(key)),
             ValueType::StringValue(val) => Value::StringValue(val),
             ValueType::BlobValue(val) => Value::BlobValue(val),
@@ -365,10 +363,7 @@ impl From<ValueType> for Value {
                     .collect()
             }),
             ValueType::ArrayValue(seq) => Value::ArrayValue(
-                seq.values
-                    .into_iter()
-                    .map(|val| Value::from(val.value_type.unwrap()))
-                    .collect(),
+                seq.values.into_iter().map(|val| Value::from(val.value_type.unwrap())).collect(),
             ),
         }
     }

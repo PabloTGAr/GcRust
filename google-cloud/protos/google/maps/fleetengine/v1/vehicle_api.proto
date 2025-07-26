@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/api/routing.proto";
+import "google/geo/type/viewport.proto";
 import "google/maps/fleetengine/v1/fleetengine.proto";
 import "google/maps/fleetengine/v1/header.proto";
 import "google/maps/fleetengine/v1/vehicles.proto";
@@ -30,7 +31,8 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 import "google/type/latlng.proto";
 
-option go_package = "google.golang.org/genproto/googleapis/maps/fleetengine/v1;fleetengine";
+option csharp_namespace = "Google.Maps.FleetEngine.V1";
+option go_package = "cloud.google.com/go/maps/fleetengine/apiv1/fleetenginepb;fleetenginepb";
 option java_multiple_files = true;
 option java_outer_classname = "VehicleApi";
 option java_package = "google.maps.fleetengine.v1";
@@ -39,6 +41,8 @@ option objc_class_prefix = "CFE";
 // Vehicle management service.
 service VehicleService {
   option (google.api.default_host) = "fleetengine.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
 
   // Instantiates a new vehicle associated with an on-demand rideshare or
   // deliveries provider. Each `Vehicle` must have a unique vehicle ID.
@@ -188,13 +192,10 @@ service VehicleService {
     };
   }
 
-  // Returns a list of vehicles that match the request
-  // options, but the vehicle locations will be somewhat altered for privacy.
-  // This method does not support the `SearchVehicleRequest.order_by` field.
-  // Vehicle matches in the response will be in order of distance from the
-  // pickup point.  Only the `vehicle` and `trip_type` fields will be populated.
+  // Deprecated: Use `SearchVehicles` instead.
   rpc SearchFuzzedVehicles(SearchVehiclesRequest)
       returns (SearchVehiclesResponse) {
+    option deprecated = true;
     option (google.api.http) = {
       post: "/v1/{parent=providers/*}/vehicles:searchFuzzed"
       body: "*"
@@ -306,18 +307,18 @@ message UpdateVehicleRequest {
   // the following fields may not be updated as they are managed by the
   // server.
   //
-  // * `current_trips`
   // * `available_capacity`
   // * `current_route_segment_version`
+  // * `current_trips`
+  // * `name`
   // * `waypoints_version`
-  //
-  // Furthermore, the vehicle `name` cannot be updated.
   //
   // If the `attributes` field is updated, **all** the vehicle's attributes are
   // replaced with the attributes provided in the request. If you want to update
-  // only some attributes, see the `UpdateVehicleAttributes` method. Likewise,
-  // the `waypoints` field can be updated, but must contain all the waypoints.
-  // currently on the vehicle, and no other waypoints.
+  // only some attributes, see the `UpdateVehicleAttributes` method.
+  //
+  // Likewise, the `waypoints` field can be updated, but must contain all the
+  // waypoints currently on the vehicle, and no other waypoints.
   Vehicle vehicle = 4 [(google.api.field_behavior) = REQUIRED];
 
   // Required. A field mask indicating which fields of the `Vehicle` to update.
@@ -360,8 +361,8 @@ message UpdateVehicleAttributesRequest {
   // this call is a member.
   string name = 3 [(google.api.field_behavior) = REQUIRED];
 
-  // Required. The vehicle attributes to update. Unmentioned attributes will not
-  // be altered or removed.
+  // Required. The vehicle attributes to update. Unmentioned attributes are not
+  // altered or removed.
   repeated VehicleAttribute attributes = 4
       [(google.api.field_behavior) = REQUIRED];
 }
@@ -369,7 +370,7 @@ message UpdateVehicleAttributesRequest {
 // `UpdateVehicleAttributes` response message.
 message UpdateVehicleAttributesResponse {
   // Required. The updated full list of vehicle attributes, including new,
-  // altered and untouched attributes.
+  // altered, and untouched attributes.
   repeated VehicleAttribute attributes = 1
       [(google.api.field_behavior) = REQUIRED];
 }
@@ -395,7 +396,10 @@ message SearchVehiclesRequest {
     // reported location to the pickup point.
     PICKUP_POINT_STRAIGHT_DISTANCE = 4;
 
-    // Ascending order by the configured match cost.
+    // Ascending order by the configured match cost. Match cost is defined as a
+    // weighted calculation between straight-line distance and ETA. Weights are
+    // set with default values and can be modified per customer. Please contact
+    // Google support if these weights need to be modified for your project.
     COST = 5;
   }
 
@@ -451,16 +455,18 @@ message SearchVehiclesRequest {
   //
   // `EXCLUSIVE` and `SHARED` may not be included together.
   // `SHARED` is not supported when `current_trips_present` is
-  // `CURRENT_TRIPS_PRESENT_UNSPECIFIED`.
+  // `CURRENT_TRIPS_PRESENT_UNSPECIFIED`. `UNKNOWN_TRIP_TYPE` is not allowed.
   repeated TripType trip_types = 9 [(google.api.field_behavior) = REQUIRED];
 
-  // Restricts the search to only those vehicles that have updated their
-  // locations within the specified duration. If this field is not
+  // Restricts the search to only those vehicles that have sent location updates
+  // to Fleet Engine within the specified duration. Stationary vehicles still
+  // transmitting their locations are not considered stale. If this field is not
   // set, the server uses five minutes as the default value.
   google.protobuf.Duration maximum_staleness = 10;
 
   // Required. Restricts the search to vehicles with one of the specified types.
-  // At least one vehicle type must be specified.
+  // At least one vehicle type must be specified. VehicleTypes with a category
+  // of `UNKNOWN` are not allowed.
   repeated Vehicle.VehicleType vehicle_types = 14
       [(google.api.field_behavior) = REQUIRED];
 
@@ -504,13 +510,15 @@ message SearchVehiclesRequest {
   // ```
   // (required_attributes[0] AND required_attributes[1] AND ...)
   // AND
-  // (required_one_of_attribute_sets[0][0] AND
-  // required_one_of_attribute_sets[0][1] AND
-  // ...)
-  // OR
-  // (required_one_of_attribute_sets[1][0] AND
-  // required_one_of_attribute_sets[1][1] AND
-  // ...)
+  // (
+  //   (required_one_of_attribute_sets[0][0] AND
+  //   required_one_of_attribute_sets[0][1] AND
+  //   ...)
+  //   OR
+  //   (required_one_of_attribute_sets[1][0] AND
+  //   required_one_of_attribute_sets[1][1] AND
+  //   ...)
+  // )
   // ```
   //
   // Restricts the search to only those vehicles with all the attributes in a
@@ -543,6 +551,30 @@ message SearchVehiclesRequest {
   // When current_trips_present is `NONE` or `ANY`, `trip_types` can be either
   // `EXCLUSIVE` or `SHARED`, but not both.
   CurrentTripsPresent current_trips_present = 21;
+
+  // Optional. A filter query to apply when searching vehicles. See
+  // http://aip.dev/160 for examples of the filter syntax.
+  //
+  // This field is designed to replace the `required_attributes`,
+  // `required_one_of_attributes`, and `required_one_of_attributes_sets` fields.
+  // If a non-empty value is specified here, the following fields must be empty:
+  // `required_attributes`, `required_one_of_attributes`, and
+  // `required_one_of_attributes_sets`.
+  //
+  // This filter functions as an AND clause with other constraints,
+  // such as `minimum_capacity` or `vehicle_types`.
+  //
+  // Note that the only queries supported are on vehicle attributes (for
+  // example, `attributes.<key> = <value>` or `attributes.<key1> = <value1> AND
+  // attributes.<key2> = <value2>`). The maximum number of restrictions allowed
+  // in a filter query is 50.
+  //
+  // Also, all attributes are stored as strings, so the only supported
+  // comparisons against attributes are string comparisons. In order to compare
+  // against number or boolean values, the values must be explicitly quoted to
+  // be treated as strings (for example, `attributes.<key> = "10"` or
+  // `attributes.<key> = "true"`).
+  string filter = 22 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // `SearchVehicles` response message.
@@ -567,10 +599,10 @@ message ListVehiclesRequest {
   // Default value: 100.
   int32 page_size = 3;
 
-  // The `next_page_token` value returned from a previous call to
-  // `ListVehicles`. Functionality is undefined if the filter criteria of this
-  // request don't match the criteria in the request that produced this
-  // `page_token`.
+  // The value of the `next_page_token` provided by a previous call to
+  // `ListVehicles` so that you can paginate through groups of vehicles. The
+  // value is undefined if the filter criteria of the request is not the same as
+  // the filter criteria for the previous call to `ListVehicles`.
   string page_token = 4;
 
   // Specifies the required minimum capacity of the vehicle. All vehicles
@@ -578,17 +610,18 @@ message ListVehiclesRequest {
   // value. If set, must be greater or equal to 0.
   google.protobuf.Int32Value minimum_capacity = 6;
 
-  // Restrict the response to vehicles that support at least
-  // one of the specified trip types.
+  // Restricts the response to vehicles that support at least one of the
+  // specified trip types.
   repeated TripType trip_types = 7;
 
-  // Restrict the response to vehicles that have updated
-  // their locations within the specified duration back from now.
-  // If present, must be a valid positive duration.
+  // Restricts the response to vehicles that have sent location updates to Fleet
+  // Engine within the specified duration. Stationary vehicles still
+  // transmitting their locations are not considered stale. If present, must be
+  // a valid positive duration.
   google.protobuf.Duration maximum_staleness = 8;
 
-  // Required. Restrict the response to vehicles with one of the specified type
-  // categories.
+  // Required. Restricts the response to vehicles with one of the specified type
+  // categories. `UNKNOWN` is not allowed.
   repeated Vehicle.VehicleType.Category vehicle_type_categories = 9
       [(google.api.field_behavior) = REQUIRED];
 
@@ -610,19 +643,19 @@ message ListVehiclesRequest {
   // ...)
   // ```
   //
-  // Restrict the response to vehicles with the specified attributes. This field
-  // is a conjunction/AND operation. A max of 50 required_attributes is allowed.
-  // This matches the maximum number of attributes allowed on a vehicle. Each
-  // repeated string should be of the format "key:value".
+  // Restricts the response to vehicles with the specified attributes. This
+  // field is a conjunction/AND operation. A max of 50 required_attributes is
+  // allowed. This matches the maximum number of attributes allowed on a
+  // vehicle. Each repeated string should be of the format "key:value".
   repeated string required_attributes = 10;
 
-  // Restrict the response to vehicles with at least one
-  // of the specified attributes in each `VehicleAttributeList`.
-  // Within each list, a vehicle must match at least one of the attributes.
-  // This field is an inclusive disjunction/OR operation in each
-  // `VehicleAttributeList` and a conjunction/AND operation across the
-  // collection of `VehicleAttributeList`. Each repeated string should be of the
-  // format "key1:value1|key2:value2|key3:value3".
+  // Restricts the response to vehicles with at least one of the specified
+  // attributes in each `VehicleAttributeList`. Within each list, a vehicle must
+  // match at least one of the attributes. This field is an inclusive
+  // disjunction/OR operation in each `VehicleAttributeList` and a
+  // conjunction/AND operation across the collection of `VehicleAttributeList`.
+  // Each repeated string should be of the format
+  // "key1:value1|key2:value2|key3:value3".
   repeated string required_one_of_attributes = 13;
 
   // `required_one_of_attribute_sets` provides additional functionality.
@@ -634,14 +667,18 @@ message ListVehiclesRequest {
   // ```
   // (required_attributes[0] AND required_attributes[1] AND ...)
   // AND
-  // (required_one_of_attributes[0][0] AND required_one_of_attributes[0][1] AND
-  // ...)
-  // OR
-  // (required_one_of_attributes[1][0] AND required_one_of_attributes[1][1] AND
-  // ...)
+  // (
+  //   (required_one_of_attribute_sets[0][0] AND
+  //   required_one_of_attribute_sets[0][1] AND
+  //   ...)
+  //   OR
+  //   (required_one_of_attribute_sets[1][0] AND
+  //   required_one_of_attribute_sets[1][1] AND
+  //   ...)
+  // )
   // ```
   //
-  // Restrict the response to vehicles that match all the attributes in a
+  // Restricts the response to vehicles that match all the attributes in a
   // `VehicleAttributeList`. Within each list, a vehicle must match all of the
   // attributes. This field is a conjunction/AND operation in each
   // `VehicleAttributeList` and inclusive disjunction/OR operation across the
@@ -649,11 +686,40 @@ message ListVehiclesRequest {
   // format "key1:value1|key2:value2|key3:value3".
   repeated string required_one_of_attribute_sets = 15;
 
-  // Restrict the response to vehicles that have this vehicle state.
+  // Restricts the response to vehicles that have this vehicle state.
   VehicleState vehicle_state = 11;
 
   // Only return the vehicles with current trip(s).
   bool on_trip_only = 14;
+
+  // Optional. A filter query to apply when listing vehicles. See
+  // http://aip.dev/160 for examples of the filter syntax.
+  //
+  // This field is designed to replace the `required_attributes`,
+  // `required_one_of_attributes`, and `required_one_of_attributes_sets` fields.
+  // If a non-empty value is specified here, the following fields must be empty:
+  // `required_attributes`, `required_one_of_attributes`, and
+  // `required_one_of_attributes_sets`.
+  //
+  // This filter functions as an AND clause with other constraints,
+  // such as `vehicle_state` or `on_trip_only`.
+  //
+  // Note that the only queries supported are on vehicle attributes (for
+  // example, `attributes.<key> = <value>` or `attributes.<key1> = <value1> AND
+  // attributes.<key2> = <value2>`). The maximum number of restrictions allowed
+  // in a filter query is 50.
+  //
+  // Also, all attributes are stored as strings, so the only supported
+  // comparisons against attributes are string comparisons. In order to compare
+  // against number or boolean values, the values must be explicitly quoted to
+  // be treated as strings (for example, `attributes.<key> = "10"` or
+  // `attributes.<key> = "true"`).
+  string filter = 16 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. A filter that limits the vehicles returned to those whose last
+  // known location was in the rectangular area defined by the viewport.
+  google.geo.type.Viewport viewport = 17
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 // `ListVehicles` response message.

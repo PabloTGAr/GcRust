@@ -30,6 +30,7 @@ proto_library(
         "//google/api:annotations_proto",
         "//google/api:client_proto",
         "//google/api:field_behavior_proto",
+        "//google/api:routing_proto",
         "//google/type:latlng_proto",
         "@com_google_protobuf//:struct_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -73,7 +74,7 @@ java_gapic_library(
     srcs = [":datastore_proto_with_info"],
     gapic_yaml = "datastore_gapic.yaml",
     grpc_service_config = "datastore_grpc_service_config.json",
-    rest_numeric_enums = False,
+    rest_numeric_enums = True,
     service_yaml = "datastore_v1.yaml",
     test_deps = [
         ":datastore_java_grpc",
@@ -115,7 +116,6 @@ load(
     "go_gapic_assembly_pkg",
     "go_gapic_library",
     "go_proto_library",
-    "go_test",
 )
 
 go_proto_library(
@@ -135,23 +135,16 @@ go_gapic_library(
     grpc_service_config = "datastore_grpc_service_config.json",
     importpath = "cloud.google.com/go/datastore/apiv1;datastore",
     metadata = True,
-    rest_numeric_enums = False,
+    rest_numeric_enums = True,
     service_yaml = "datastore_v1.yaml",
     transport = "grpc+rest",
     deps = [
         ":datastore_go_proto",
         "//google/longrunning:longrunning_go_gapic",
         "//google/longrunning:longrunning_go_proto",
-        "@com_google_cloud_go//longrunning:go_default_library",
-        "@com_google_cloud_go//longrunning/autogen:go_default_library",
+        "@com_google_cloud_go_longrunning//:go_default_library",
+        "@com_google_cloud_go_longrunning//autogen:go_default_library",
     ],
-)
-
-go_test(
-    name = "datastore_go_gapic_test",
-    srcs = [":datastore_go_gapic_srcjar_test"],
-    embed = [":datastore_go_gapic"],
-    importpath = "cloud.google.com/go/datastore/apiv1",
 )
 
 # Open Source Packages
@@ -160,6 +153,7 @@ go_gapic_assembly_pkg(
     deps = [
         ":datastore_go_gapic",
         ":datastore_go_gapic_srcjar-metadata.srcjar",
+        ":datastore_go_gapic_srcjar-snippets.srcjar",
         ":datastore_go_gapic_srcjar-test.srcjar",
         ":datastore_go_proto",
     ],
@@ -180,9 +174,9 @@ py_gapic_library(
     srcs = [":datastore_proto"],
     grpc_service_config = "datastore_grpc_service_config.json",
     opt_args = ["python-gapic-namespace=google.cloud"],
-    rest_numeric_enums = False,
+    rest_numeric_enums = True,
     service_yaml = "datastore_v1.yaml",
-    transport = "grpc",
+    transport = "grpc+rest",
     deps = [
     ],
 )
@@ -212,7 +206,6 @@ load(
     "@com_google_googleapis_imports//:imports.bzl",
     "php_gapic_assembly_pkg",
     "php_gapic_library",
-    "php_grpc_library",
     "php_proto_library",
 )
 
@@ -221,22 +214,15 @@ php_proto_library(
     deps = [":datastore_proto"],
 )
 
-php_grpc_library(
-    name = "datastore_php_grpc",
-    srcs = [":datastore_proto"],
-    deps = [":datastore_php_proto"],
-)
-
 php_gapic_library(
     name = "datastore_php_gapic",
     srcs = [":datastore_proto_with_info"],
     grpc_service_config = "datastore_grpc_service_config.json",
-    rest_numeric_enums = False,
+    migration_mode = "MIGRATION_MODE_UNSPECIFIED",
+    rest_numeric_enums = True,
     service_yaml = "datastore_v1.yaml",
-    deps = [
-        ":datastore_php_grpc",
-        ":datastore_php_proto",
-    ],
+    transport = "grpc+rest",
+    deps = [":datastore_php_proto"],
 )
 
 # Open Source Packages
@@ -244,7 +230,6 @@ php_gapic_assembly_pkg(
     name = "google-cloud-datastore-v1-php",
     deps = [
         ":datastore_php_gapic",
-        ":datastore_php_grpc",
         ":datastore_php_proto",
     ],
 )
@@ -265,11 +250,12 @@ nodejs_gapic_library(
     extra_protoc_parameters = ["metadata"],
     grpc_service_config = "datastore_grpc_service_config.json",
     main_service = "datastore",
-    package = "google.datastore.v1",
-    rest_numeric_enums = False,
-    service_yaml = "datastore_v1.yaml",
-    deps = [],
     mixins = "google.longrunning.Operations",
+    package = "google.datastore.v1",
+    rest_numeric_enums = True,
+    service_yaml = "datastore_v1.yaml",
+    transport = "grpc+rest",
+    deps = [],
 )
 
 nodejs_gapic_assembly_pkg(
@@ -313,10 +299,11 @@ ruby_cloud_gapic_library(
         "ruby-cloud-product-url=https://cloud.google.com/datastore",
     ],
     grpc_service_config = "datastore_grpc_service_config.json",
-    rest_numeric_enums = False,
+    rest_numeric_enums = True,
     ruby_cloud_description = "Firestore in Datastore mode is a NoSQL document database built for automatic scaling, high performance, and ease of application development.",
     ruby_cloud_title = "Firestore in Datastore mode V1",
     service_yaml = "datastore_v1.yaml",
+    transport = "grpc+rest",
     deps = [
         ":datastore_ruby_grpc",
         ":datastore_ruby_proto",
@@ -360,8 +347,9 @@ csharp_gapic_library(
     srcs = [":datastore_proto_with_info"],
     common_resources_config = "@gax_dotnet//:Google.Api.Gax/ResourceNames/CommonResourcesConfig.json",
     grpc_service_config = "datastore_grpc_service_config.json",
-    rest_numeric_enums = False,
+    rest_numeric_enums = True,
     service_yaml = "datastore_v1.yaml",
+    transport = "grpc+rest",
     deps = [
         ":datastore_csharp_grpc",
         ":datastore_csharp_proto",

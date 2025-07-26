@@ -42,6 +42,9 @@ pub enum ConvertError {
     /// An expected property was missing.
     #[error("expected property `{0}` was missing")]
     MissingProperty(String),
+    /// An expected property was missing.
+    #[error("expected property type `{0}` was missing")]
+    MissingPropertyType(String),
     /// A value, expected to be an entity, turned out to not be one.
     #[error("expected property type `{expected}`, got `{got}`")]
     UnexpectedPropertyType {

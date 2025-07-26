@@ -3,7 +3,7 @@ name = "google-cloud-derive"
 version = "0.2.1"
 description = "Derive macros for the `google-cloud` library"
 authors = ["Nicolas Polomack <nicolas@polomack.eu>"]
-edition = "2018"
+edition = "2021"
 categories = ["web-programming", "network-programming", "asynchronous"]
 keywords = ["grpc", "futures", "async", "google", "cloud"]
 license = "MIT OR Apache-2.0"
@@ -21,12 +21,12 @@ name = "tests"
 path = "tests/tests.rs"
 
 [dependencies]
-syn = { version = "1.0.17", features = ["full", "extra-traits"] }
-quote = "1.0.3"
-darling = "0.10.2"
+syn = { version = "2.0.98", features = ["full", "extra-traits"] }
+quote = "1.0.38"
+darling = "0.20.10"
 
 [dev-dependencies]
-trybuild = "1.0.25"
+trybuild = "1.0.103"
 google-cloud = { path = "../google-cloud", features = ["derive"] }
 
 [package.metadata.docs.rs]

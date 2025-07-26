@@ -28,7 +28,7 @@ import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.VisionAI.V1Alpha1";
-option go_package = "google.golang.org/genproto/googleapis/cloud/visionai/v1alpha1;visionai";
+option go_package = "cloud.google.com/go/visionai/apiv1alpha1/visionaipb;visionaipb";
 option java_multiple_files = true;
 option java_outer_classname = "PlatformProto";
 option java_package = "com.google.cloud.visionai.v1alpha1";
@@ -408,6 +408,21 @@ enum AcceleratorType {
   TPU_V3 = 7;
 }
 
+// Message for DeleteApplicationInstance Response.
+message DeleteApplicationInstancesResponse {
+
+}
+
+// Message for CreateApplicationInstance Response.
+message CreateApplicationInstancesResponse {
+
+}
+
+// Message for UpdateApplicationInstances Response.
+message UpdateApplicationInstancesResponse {
+
+}
+
 // Message for adding stream input to an Application.
 message CreateApplicationInstancesRequest {
   // Required. the name of the application to retrieve.
@@ -473,6 +488,32 @@ message DeleteApplicationInstancesRequest {
   // The request ID must be a valid UUID with the exception that zero UUID is
   // not supported (00000000-0000-0000-0000-000000000000).
   string request_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// RPC Request Messages.
+// Message for DeployApplication Response.
+message DeployApplicationResponse {
+
+}
+
+// Message for UndeployApplication Response.
+message UndeployApplicationResponse {
+
+}
+
+// Message for RemoveApplicationStreamInput Response.
+message RemoveApplicationStreamInputResponse {
+
+}
+
+// Message for AddApplicationStreamInput Response.
+message AddApplicationStreamInputResponse {
+
+}
+
+// Message for AddApplicationStreamInput Response.
+message UpdateApplicationStreamInputResponse {
+
 }
 
 // Message for requesting list of Applications.
@@ -1198,11 +1239,20 @@ message Application {
       string key = 3;
     }
 
+    // Monitoring-related configuration for an application.
+    message MonitoringConfig {
+      // Whether this application has monitoring enabled.
+      bool enabled = 1;
+    }
+
     // Timestamp when the engine be deployed
     google.protobuf.Timestamp deploy_time = 1;
 
     // Globally created resources like warehouse dataschemas.
     repeated GlobalOutputResource global_output_resources = 3;
+
+    // Monitoring-related configuration for this application.
+    MonitoringConfig monitoring_config = 4;
   }
 
   // State of the Application
@@ -1272,17 +1322,26 @@ message Application {
 
 // Message storing the graph of the application.
 message ApplicationConfigs {
-  // Monitoring-related configuration for an application.
-  message MonitoringConfig {
-    // Whether this application has monitoring enabled.
-    bool enabled = 1;
+  // message storing the config for event delivery
+  message EventDeliveryConfig {
+    // The delivery channel for the event notification, only pub/sub topic is
+    // supported now.
+    // Example channel:
+    // [//pubsub.googleapis.com/projects/visionai-testing-stable/topics/test-topic]
+    string channel = 1;
+
+    // The expected delivery interval for the same event. The same event won't
+    // be notified multiple times during this internal event that it is
+    // happening multiple times during the period of time.The same event is
+    // identified by <event_id, app_platform_metadata>.
+    google.protobuf.Duration minimal_delivery_interval = 2;
   }
 
   // A list of nodes  in the application graph.
   repeated Node nodes = 1;
 
-  // Monitoring-related configuration for this application.
-  MonitoringConfig monitoring_config = 2;
+  // Event-related configuration for this application.
+  EventDeliveryConfig event_delivery_config = 3;
 }
 
 // Message describing node object.
@@ -1387,7 +1446,7 @@ message Instance {
 
       // If the input resource is VisionAI Stream, the associated annotations
       // can be specified using annotated_stream instead.
-      StreamWithAnnotation annotated_stream = 4;
+      StreamWithAnnotation annotated_stream = 4 [deprecated = true];
     }
 
     // The name of graph node who receives the input resource.
@@ -1400,6 +1459,9 @@ message Instance {
     // The specific input resource binding which will consume the current Input
     // Resource, can be ignored is there is only 1 input binding.
     string input_resource_binding = 3;
+
+    // Contains resource annotations.
+    ResourceAnnotations annotations = 5;
   }
 
   // Message of output resource used in one application instance.
@@ -1506,7 +1568,7 @@ message ApplicationInstance {
 }
 
 // Message describing Processor object.
-// Next ID: 16
+// Next ID: 18
 message Processor {
   option (google.api.resource) = {
     type: "visionai.googleapis.com/Processor"
@@ -1596,6 +1658,9 @@ message Processor {
   string configuration_typeurl = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   repeated StreamAnnotationType supported_annotation_types = 15 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Indicates if the processor supports post processing.
+  bool supports_post_processing = 17;
 }
 
 // Message describing the input / output specifications of a processor.
@@ -1748,7 +1813,7 @@ message CustomProcessorSourceInfo {
   ModelSchema model_schema = 5;
 }
 
-// Next ID: 23
+// Next ID: 24
 message ProcessorConfig {
   oneof processor_config {
     // Configs of stream input processor.
@@ -1818,6 +1883,32 @@ message StreamWithAnnotation {
   // processor, then the Occupancy Analytic processor will have two active zones
   // defined.
   repeated NodeAnnotation node_annotations = 3;
+}
+
+// Message describing annotations specific to application node.
+// This message is a duplication of StreamWithAnnotation.NodeAnnotation.
+message ApplicationNodeAnnotation {
+  // The node name of the application graph.
+  string node = 1;
+
+  // The node specific stream annotations.
+  repeated StreamAnnotation annotations = 2;
+}
+
+// Message describing general annotation for resources.
+message ResourceAnnotations {
+  // Annotations that will be applied to the whole application.
+  repeated StreamAnnotation application_annotations = 1;
+
+  // Annotations that will be applied to the specific node of the application.
+  // If the same type of the annotations is applied to both application and
+  // node, the node annotation will be added in addition to the global
+  // application one.
+  // For example, if there is one active zone annotation for the whole
+  // application and one active zone annotation for the Occupancy Analytic
+  // processor, then the Occupancy Analytic processor will have two active zones
+  // defined.
+  repeated ApplicationNodeAnnotation node_annotations = 2;
 }
 
 // Message describing Video Stream Input Config.
@@ -2021,6 +2112,7 @@ message VertexCustomConfig {
   // If true, the prediction request received by custom model will also contain
   // metadata with the following schema:
   // 'appPlatformMetadata': {
+  //       'ingestionTime': DOUBLE; (UNIX timestamp)
   //       'application': STRING;
   //       'instanceId': STRING;
   //       'node': STRING;
@@ -2128,29 +2220,3 @@ message DedicatedResources {
   // [autoscaling_metric_specs.target][google.cloud.visionai.v1alpha1.AutoscalingMetricSpec.target] to `80`.
   repeated AutoscalingMetricSpec autoscaling_metric_specs = 4 [(google.api.field_behavior) = IMMUTABLE];
 }
-
-// RPC Request Messages.
-// Message for DeployApplication Response.
-message DeployApplicationResponse {}
-
-// Message for UndeployApplication Response.
-message UndeployApplicationResponse {}
-
-// Message for RemoveApplicationStreamInput Response.
-message RemoveApplicationStreamInputResponse {}
-
-// Message for AddApplicationStreamInput Response.
-message AddApplicationStreamInputResponse {}
-
-// Message for AddApplicationStreamInput Response.
-message UpdateApplicationStreamInputResponse {}
-
-// Message for DeleteApplicationInstance Response.
-message DeleteApplicationInstancesResponse {}
-
-// Message for CreateApplicationInstance Response.
-message CreateApplicationInstancesResponse {}
-
-// Message for UpdateApplicationInstances Response.
-message UpdateApplicationInstancesResponse {}
-

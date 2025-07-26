@@ -54,8 +54,8 @@ proto_library_with_info(
     name = "visionai_proto_with_info",
     deps = [
         ":visionai_proto",
-        "//google/cloud/location:location_proto",
         "//google/cloud:common_resources_proto",
+        "//google/cloud/location:location_proto",
         "//google/iam/v1:iam_policy_proto",
     ],
 )
@@ -88,6 +88,7 @@ java_gapic_library(
     srcs = [":visionai_proto_with_info"],
     gapic_yaml = None,
     grpc_service_config = "visionai_grpc_service_config.json",
+    rest_numeric_enums = True,
     service_yaml = "visionai_v1alpha1.yaml",
     test_deps = [
         ":visionai_java_grpc",
@@ -123,6 +124,7 @@ java_gapic_test(
 # Open Source Packages
 java_gapic_assembly_gradle_pkg(
     name = "google-cloud-visionai-v1alpha1-java",
+    include_samples = True,
     transport = "grpc+rest",
     deps = [
         ":visionai_java_gapic",
@@ -130,7 +132,6 @@ java_gapic_assembly_gradle_pkg(
         ":visionai_java_proto",
         ":visionai_proto",
     ],
-    include_samples = True,
 )
 
 ##############################################################################
@@ -141,13 +142,12 @@ load(
     "go_gapic_assembly_pkg",
     "go_gapic_library",
     "go_proto_library",
-    "go_test",
 )
 
 go_proto_library(
     name = "visionai_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
-    importpath = "google.golang.org/genproto/googleapis/cloud/visionai/v1alpha1",
+    importpath = "cloud.google.com/go/visionai/apiv1alpha1/visionaipb",
     protos = [":visionai_proto"],
     deps = [
         "//google/api:annotations_go_proto",
@@ -163,27 +163,21 @@ go_gapic_library(
     grpc_service_config = "visionai_grpc_service_config.json",
     importpath = "cloud.google.com/go/visionai/apiv1alpha1;visionai",
     metadata = True,
+    release_level = "alpha",
+    rest_numeric_enums = True,
     service_yaml = "visionai_v1alpha1.yaml",
     transport = "grpc+rest",
-    rest_numeric_enums = True,
     deps = [
         ":visionai_go_proto",
         "//google/cloud/location:location_go_proto",
         "//google/iam/v1:iam_go_proto",
         "//google/longrunning:longrunning_go_proto",
-        "@com_google_cloud_go//longrunning/autogen:go_default_library",
-        "@com_google_cloud_go//longrunning:go_default_library",
+        "@com_google_cloud_go_longrunning//:go_default_library",
+        "@com_google_cloud_go_longrunning//autogen:go_default_library",
         "@io_bazel_rules_go//proto/wkt:any_go_proto",
         "@io_bazel_rules_go//proto/wkt:duration_go_proto",
         "@io_bazel_rules_go//proto/wkt:struct_go_proto",
     ],
-)
-
-go_test(
-    name = "visionai_go_gapic_test",
-    srcs = [":visionai_go_gapic_srcjar_test"],
-    embed = [":visionai_go_gapic"],
-    importpath = "cloud.google.com/go/visionai/apiv1alpha1",
 )
 
 # Open Source Packages
@@ -191,8 +185,9 @@ go_gapic_assembly_pkg(
     name = "gapi-cloud-visionai-v1alpha1-go",
     deps = [
         ":visionai_go_gapic",
-        ":visionai_go_gapic_srcjar-test.srcjar",
         ":visionai_go_gapic_srcjar-metadata.srcjar",
+        ":visionai_go_gapic_srcjar-snippets.srcjar",
+        ":visionai_go_gapic_srcjar-test.srcjar",
         ":visionai_go_proto",
     ],
 )
@@ -211,6 +206,7 @@ py_gapic_library(
     name = "visionai_py_gapic",
     srcs = [":visionai_proto"],
     grpc_service_config = "visionai_grpc_service_config.json",
+    rest_numeric_enums = True,
     service_yaml = "visionai_v1alpha1.yaml",
     transport = "grpc+rest",
     deps = [
@@ -243,7 +239,6 @@ load(
     "@com_google_googleapis_imports//:imports.bzl",
     "php_gapic_assembly_pkg",
     "php_gapic_library",
-    "php_grpc_library",
     "php_proto_library",
 )
 
@@ -252,21 +247,14 @@ php_proto_library(
     deps = [":visionai_proto"],
 )
 
-php_grpc_library(
-    name = "visionai_php_grpc",
-    srcs = [":visionai_proto"],
-    deps = [":visionai_php_proto"],
-)
-
 php_gapic_library(
     name = "visionai_php_gapic",
     srcs = [":visionai_proto_with_info"],
     grpc_service_config = "visionai_grpc_service_config.json",
+    rest_numeric_enums = True,
     service_yaml = "visionai_v1alpha1.yaml",
-    deps = [
-        ":visionai_php_grpc",
-        ":visionai_php_proto",
-    ],
+    transport = "grpc+rest",
+    deps = [":visionai_php_proto"],
 )
 
 # Open Source Packages
@@ -274,7 +262,6 @@ php_gapic_assembly_pkg(
     name = "google-cloud-visionai-v1alpha1-php",
     deps = [
         ":visionai_php_gapic",
-        ":visionai_php_grpc",
         ":visionai_php_proto",
     ],
 )
@@ -295,7 +282,9 @@ nodejs_gapic_library(
     extra_protoc_parameters = ["metadata"],
     grpc_service_config = "visionai_grpc_service_config.json",
     package = "google.cloud.visionai.v1alpha1",
+    rest_numeric_enums = True,
     service_yaml = "visionai_v1alpha1.yaml",
+    transport = "grpc+rest",
     deps = [],
 )
 
@@ -312,8 +301,8 @@ nodejs_gapic_assembly_pkg(
 ##############################################################################
 load(
     "@com_google_googleapis_imports//:imports.bzl",
-    "ruby_gapic_assembly_pkg",
     "ruby_cloud_gapic_library",
+    "ruby_gapic_assembly_pkg",
     "ruby_grpc_library",
     "ruby_proto_library",
 )
@@ -332,11 +321,11 @@ ruby_grpc_library(
 ruby_cloud_gapic_library(
     name = "visionai_ruby_gapic",
     srcs = [":visionai_proto_with_info"],
-    extra_protoc_parameters = [
-        "ruby-cloud-gem-name=google-cloud-visionai-v1alpha1",
-    ],
+    extra_protoc_parameters = ["ruby-cloud-gem-name=google-cloud-visionai-v1alpha1"],
     grpc_service_config = "visionai_grpc_service_config.json",
+    rest_numeric_enums = True,
     service_yaml = "visionai_v1alpha1.yaml",
+    transport = "grpc+rest",
     deps = [
         ":visionai_ruby_grpc",
         ":visionai_ruby_proto",
@@ -380,7 +369,9 @@ csharp_gapic_library(
     srcs = [":visionai_proto_with_info"],
     common_resources_config = "@gax_dotnet//:Google.Api.Gax/ResourceNames/CommonResourcesConfig.json",
     grpc_service_config = "visionai_grpc_service_config.json",
+    rest_numeric_enums = True,
     service_yaml = "visionai_v1alpha1.yaml",
+    transport = "grpc+rest",
     deps = [
         ":visionai_csharp_grpc",
         ":visionai_csharp_proto",
@@ -414,6 +405,7 @@ cc_proto_library(
 cc_grpc_library(
     name = "visionai_cc_grpc",
     srcs = [":visionai_proto"],
+    generate_mocks = True,
     grpc_only = True,
     deps = [":visionai_cc_proto"],
 )

@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
+use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
@@ -15,8 +16,9 @@ use crate::datastore::{
     Entity, Error, Filter, FromValue, IntoEntity, Key, KeyID, Order, Query, Value,
 };
 
-use super::{Transaction, IndexExcluded};
-use super::api::transaction_options::{ReadWrite, ReadOnly};
+use super::api::aggregation_query::aggregation::{Count, Sum};
+use super::api::transaction_options::{ReadOnly, ReadWrite};
+use super::{CompositeFilter, IndexExcluded, Transaction};
 
 /// The Datastore client, tied to a specific project.
 #[derive(Clone)]
@@ -34,8 +36,19 @@ pub enum TrxOption {
     ReadOnly,
     /// modo de escritura y lectura
     ReadWrite,
-    /// modo por defecto 
+    /// modo por defecto
     Default,
+}
+
+/// Optiones para el tipo se Agregación
+#[derive(Debug, Clone, PartialEq)]
+pub enum Aggregation {
+    ///
+    Count(String),
+    ///
+    Sum(String, String),
+    ///
+    Avg(String, String),
 }
 
 impl Client {
@@ -62,6 +75,7 @@ impl Client {
     /// Credentials are looked up in the `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
     pub async fn new(project_name: impl Into<String>) -> Result<Client, Error> {
         let path = env::var("GOOGLE_APPLICATION_CREDENTIALS")?;
+        let path = Path::new(&path);
         let file = File::open(path)?;
         let creds = json::from_reader(file)?;
 
@@ -77,18 +91,13 @@ impl Client {
             .ca_certificate(Certificate::from_pem(TLS_CERTS))
             .domain_name(Client::DOMAIN_NAME);
 
-        let channel = Channel::from_static(Client::ENDPOINT)
-            .tls_config(tls_config)?
-            .connect()
-            .await?;
+        let channel =
+            Channel::from_static(Client::ENDPOINT).tls_config(tls_config)?.connect().await?;
 
         Ok(Client {
             project_name: project_name.into(),
             service: DatastoreClient::new(channel),
-            token_manager: Arc::new(Mutex::new(TokenManager::new(
-                creds,
-                Client::SCOPES.as_ref(),
-            ))),
+            token_manager: Arc::new(Mutex::new(TokenManager::new(creds, Client::SCOPES.as_ref()))),
             index_excluded: IndexExcluded::new()?,
         })
     }
@@ -96,14 +105,20 @@ impl Client {
     /// Create a new transaction
     ///     - option_mode: Option for the transaction
     ///     - trx_id: Clave de la transacción anterior y que por algún motivo fallo y se ejecuto el rollback
-    pub async fn new_transaction(&mut self, option_mode: TrxOption, trx_id: Option<Vec<u8>>) -> Result<Transaction, Error> {
+    pub async fn new_transaction(
+        &mut self,
+        option_mode: TrxOption,
+        trx_id: Option<Vec<u8>>,
+    ) -> Result<Transaction, Error> {
         let trx_option = match option_mode {
             TrxOption::ReadOnly => Some(api::TransactionOptions {
-                            mode: Some(api::transaction_options::Mode::ReadOnly(ReadOnly{read_time: None}))
-                        }),
+                mode: Some(api::transaction_options::Mode::ReadOnly(ReadOnly { read_time: None })),
+            }),
             TrxOption::ReadWrite => match trx_id {
                 Some(trx) => Some(api::TransactionOptions {
-                    mode: Some(api::transaction_options::Mode::ReadWrite(ReadWrite {previous_transaction: trx}))
+                    mode: Some(api::transaction_options::Mode::ReadWrite(ReadWrite {
+                        previous_transaction: trx,
+                    })),
                 }),
                 None => None,
             },
@@ -126,10 +141,7 @@ impl Client {
     /// Reserve the ID of an entity before creating it
     /// We can use it for transactions with related entities
     pub async fn allocate_tx(&mut self, keys: Vec<Key>) -> Result<Vec<Key>, Error> {
-        let ks = keys
-            .iter()
-            .map(|key| convert_key(self.project_name.as_str(), key.borrow()))
-            .collect();
+        let ks = keys.iter().map(|key| convert_key(self.project_name.as_str(), key)).collect();
 
         let request = api::AllocateIdsRequest {
             database_id: "".to_string(),
@@ -141,11 +153,8 @@ impl Client {
         let response = self.service.allocate_ids(request).await?;
 
         let response = response.into_inner();
-        let keys = response.keys
-            .into_iter()
-            .map(|f| api::Key::into(f))
-            .collect::<Vec<Key>>();
-            
+        let keys = response.keys.into_iter().map(|f| api::Key::into(f)).collect::<Vec<Key>>();
+
         Ok(keys)
     }
 
@@ -160,7 +169,7 @@ impl Client {
     }
 
     /// Gets multiple entities from multiple keys.
-    pub async fn get_all<T, K, I>(&mut self, keys: I) -> Result<Vec<T>, Error> 
+    pub async fn get_all<T, K, I>(&mut self, keys: I) -> Result<Vec<T>, Error>
     where
         I: IntoIterator<Item = K>,
         K: Borrow<Key>,
@@ -170,7 +179,11 @@ impl Client {
     }
 
     /// Gets multiple entities from multiple keys associated with a transaction
-    pub(crate) async fn get_all_run<T, K, I>(&mut self, keys: I, tx_id: Option<Vec<u8>>) -> Result<Vec<T>, Error>
+    pub(crate) async fn get_all_run<T, K, I>(
+        &mut self,
+        keys: I,
+        tx_id: Option<Vec<u8>>,
+    ) -> Result<Vec<T>, Error>
     where
         I: IntoIterator<Item = K>,
         K: Borrow<Key>,
@@ -188,7 +201,7 @@ impl Client {
                 Some(tx) => api::LookupRequest {
                     keys,
                     database_id: "".to_string(),
-                    project_id: self.project_name.clone(), 
+                    project_id: self.project_name.clone(),
                     read_options: Some(api::ReadOptions {
                         consistency_type: Some(api::read_options::ConsistencyType::Transaction(tx)),
                     }),
@@ -198,12 +211,12 @@ impl Client {
                     database_id: "".to_string(),
                     project_id: self.project_name.clone(),
                     read_options: None,
-                }
+                },
             };
 
             let request = self.construct_request(request).await?;
             let response = self.service.lookup(request).await?;
-            
+
             let response = response.into_inner();
             found.extend(
                 response
@@ -240,16 +253,18 @@ impl Client {
         I: IntoIterator<Item = T>,
         T: IntoEntity,
     {
-        let entities: Vec<Entity> = entities
-            .into_iter()
-            .map(IntoEntity::into_entity)
-            .collect::<Result<_, _>>()?;
+        let entities: Vec<Entity> =
+            entities.into_iter().map(IntoEntity::into_entity).collect::<Result<_, _>>()?;
 
         let mutations = entities
             .into_iter()
             .map(|entity| {
                 let is_incomplete = entity.key.is_new || entity.key.is_incomplete();
-                let entity = convert_entity(self.project_name.as_str(), entity, self.index_excluded.to_owned());
+                let entity = convert_entity(
+                    self.project_name.as_str(),
+                    entity,
+                    self.index_excluded.to_owned(),
+                );
                 api::Mutation {
                     operation: if is_incomplete {
                         Some(api::mutation::Operation::Insert(entity))
@@ -271,11 +286,8 @@ impl Client {
         let request = self.construct_request(request).await?;
         let response = self.service.commit(request).await?;
         let response = response.into_inner();
-        let keys = response
-            .mutation_results
-            .into_iter()
-            .map(|result| result.key.map(Key::from))
-            .collect();
+        let keys =
+            response.mutation_results.into_iter().map(|result| result.key.map(Key::from)).collect();
 
         Ok(keys)
     }
@@ -319,7 +331,11 @@ impl Client {
     }
 
     /// Runs a (potentially) complex query againt Datastore and returns the results and associated with a transaction
-    pub(crate) async fn query_run(&mut self, query: Query, tx_id: Option<Vec<u8>>) -> Result<(Vec<Entity>, Vec<u8>), Error> {
+    pub(crate) async fn query_run(
+        &mut self,
+        query: Query,
+        tx_id: Option<Vec<u8>>,
+    ) -> Result<(Vec<Entity>, Vec<u8>), Error> {
         let mut output = Vec::new();
 
         let mut cur_query = query.clone();
@@ -330,46 +346,8 @@ impl Client {
         };
 
         loop {
-            let projection = cur_query
-                .projections
-                .into_iter()
-                .map(|name| api::Projection {
-                    property: Some(api::PropertyReference { name }),
-                })
-                .collect();
-            let filter = convert_filter(self.project_name.as_str(), cur_query.filters);
-            let order = cur_query
-                .ordering
-                .into_iter()
-                .map(|order| {
-                    use api::property_order::Direction;
-                    let (name, direction) = match order {
-                        Order::Asc(name) => (name, Direction::Ascending),
-                        Order::Desc(name) => (name, Direction::Descending),
-                    };
-                    api::PropertyOrder {
-                        property: Some(api::PropertyReference { name }),
-                        direction: direction as i32,
-                    }
-                })
-                .collect();
-            let api_query = api::Query {
-                kind: vec![api::KindExpression {
-                    name: cur_query.kind,
-                }],
-                projection,
-                filter,
-                order,
-                offset: cur_query.offset,
-                limit: cur_query.limit,
-                start_cursor: cursor,
-                end_cursor: Vec::new(),
-                distinct_on: cur_query
-                    .distinct_on
-                    .into_iter()
-                    .map(|name| api::PropertyReference { name })
-                    .collect(),
-            };
+            let api_query = convert_query(&self.project_name, cur_query.to_owned(), cursor);
+
             let request = api::RunQueryRequest {
                 partition_id: Some(api::PartitionId {
                     database_id: "".to_string(),
@@ -380,32 +358,26 @@ impl Client {
                 read_options: Some({
                     use api::read_options::{ConsistencyType, ReadConsistency};
                     api::ReadOptions {
-                        consistency_type: Some(
-                            match tx_id.to_owned() {
-                                Some(tx) => ConsistencyType::Transaction(tx),
-                                None => ConsistencyType::ReadConsistency(
-                                    if cur_query.eventual {
-                                        ReadConsistency::Eventual as i32
-                                    } else {
-                                        ReadConsistency::Strong as i32
-                                    },
-                                ),
-                            }
-                        ),
+                        consistency_type: Some(match tx_id.to_owned() {
+                            Some(tx) => ConsistencyType::Transaction(tx),
+                            None => ConsistencyType::ReadConsistency(if cur_query.eventual {
+                                ReadConsistency::Eventual as i32
+                            } else {
+                                ReadConsistency::Strong as i32
+                            }),
+                        }),
                     }
                 }),
                 database_id: "".to_string(),
                 project_id: self.project_name.clone(),
             };
+
             let request = self.construct_request(request).await?;
             let results = self.service.run_query(request).await?;
             let results = results.into_inner().batch.unwrap();
 
             output.extend(
-                results
-                    .entity_results
-                    .into_iter()
-                    .map(|el| Entity::from(el.entity.unwrap())),
+                results.entity_results.into_iter().map(|el| Entity::from(el.entity.unwrap())),
             );
 
             if results.more_results
@@ -417,6 +389,145 @@ impl Client {
             cur_query = query.clone();
             cursor = results.end_cursor;
         }
+    }
+
+    /// Runs a (potentially) complex query againt Datastore and returns the results.
+    pub async fn aggregation_query(
+        &mut self,
+        aggregations: Vec<Aggregation>,
+        query: Query,
+    ) -> Result<Vec<Value>, Error> {
+        Ok(self.aggregation_query_run(aggregations, query, None).await?)
+    }
+
+    /// Runs a (potentially) complex query againt Datastore and returns the results and associated with a transaction
+    pub(crate) async fn aggregation_query_run(
+        &mut self,
+        aggregations: Vec<Aggregation>,
+        query: Query,
+        tx_id: Option<Vec<u8>>,
+    ) -> Result<Vec<Value>, Error> {
+        let cur_query = query.clone();
+
+        let cursor = match query.cursor.to_owned() {
+            Some(c) => c,
+            None => Vec::new(),
+        };
+
+        let api_query = convert_query(&self.project_name, cur_query.to_owned(), cursor);
+
+        let aggregations = aggregations
+            .to_vec()
+            .into_iter()
+            .map(|aggr| match aggr {
+                super::Aggregation::Count(alias) => {
+                    let operator = api::aggregation_query::aggregation::Operator::Count(Count {
+                        up_to: Some(1000),
+                    });
+                    api::aggregation_query::Aggregation { operator: Some(operator), alias }
+                }
+                super::Aggregation::Sum(alias, property) => {
+                    let operator = api::aggregation_query::aggregation::Operator::Sum(Sum {
+                        property: Some(api::PropertyReference { name: property }),
+                    });
+                    api::aggregation_query::Aggregation { operator: Some(operator), alias }
+                }
+                super::Aggregation::Avg(alias, property) => {
+                    let operator = api::aggregation_query::aggregation::Operator::Avg(
+                        api::aggregation_query::aggregation::Avg {
+                            property: Some(api::PropertyReference { name: property }),
+                        },
+                    );
+                    api::aggregation_query::Aggregation { operator: Some(operator), alias }
+                }
+            })
+            .collect::<Vec<api::aggregation_query::Aggregation>>();
+
+        let aggregation_query: api::AggregationQuery = api::AggregationQuery {
+            aggregations,
+            query_type: Some(api::aggregation_query::QueryType::NestedQuery(api_query.clone())),
+        };
+
+        let request = api::RunAggregationQueryRequest {
+            partition_id: Some(api::PartitionId {
+                database_id: "".to_string(),
+                project_id: self.project_name.clone(),
+                namespace_id: cur_query.namespace.unwrap_or_else(String::new),
+            }),
+            query_type: Some(api::run_aggregation_query_request::QueryType::AggregationQuery(
+                aggregation_query,
+            )),
+            read_options: Some({
+                use api::read_options::{ConsistencyType, ReadConsistency};
+                api::ReadOptions {
+                    consistency_type: Some(match tx_id.to_owned() {
+                        Some(tx) => ConsistencyType::Transaction(tx),
+                        None => ConsistencyType::ReadConsistency(if cur_query.eventual {
+                            ReadConsistency::Eventual as i32
+                        } else {
+                            ReadConsistency::Strong as i32
+                        }),
+                    }),
+                }
+            }),
+            database_id: "".to_string(),
+            project_id: self.project_name.clone(),
+        };
+        let request = self.construct_request(request).await?;
+        let results = self.service.run_aggregation_query(request).await?;
+        let results = results.into_inner().batch.unwrap();
+
+        Ok(results
+            .aggregation_results
+            .into_iter()
+            .map(|el| {
+                let properties = el
+                    .aggregate_properties
+                    .into_iter()
+                    .map(|(k, v)| (k, Value::from(v.value_type.unwrap())))
+                    .collect();
+                Value::EntityValue(properties)
+            })
+            .collect::<Vec<Value>>())
+    }
+}
+
+fn convert_query(project_name: &str, cur_query: Query, cursor: Vec<u8>) -> api::Query {
+    let projection = cur_query
+        .projections
+        .into_iter()
+        .map(|name| api::Projection { property: Some(api::PropertyReference { name }) })
+        .collect();
+    let filter = convert_filter(project_name, cur_query.filters, cur_query.composite_filter);
+    let order = cur_query
+        .ordering
+        .into_iter()
+        .map(|order| {
+            use api::property_order::Direction;
+            let (name, direction) = match order {
+                Order::Asc(name) => (name, Direction::Ascending),
+                Order::Desc(name) => (name, Direction::Descending),
+            };
+            api::PropertyOrder {
+                property: Some(api::PropertyReference { name }),
+                direction: direction as i32,
+            }
+        })
+        .collect();
+    api::Query {
+        kind: vec![api::KindExpression { name: cur_query.kind }],
+        projection,
+        filter,
+        order,
+        offset: cur_query.offset,
+        limit: cur_query.limit,
+        start_cursor: cursor,
+        end_cursor: Vec::new(),
+        distinct_on: cur_query
+            .distinct_on
+            .into_iter()
+            .map(|name| api::PropertyReference { name })
+            .collect(),
     }
 }
 
@@ -449,7 +560,11 @@ pub(crate) fn convert_key(project_name: &str, key: &Key) -> api::Key {
     }
 }
 
-pub(crate) fn convert_entity(project_name: &str, entity: Entity, index_excluded: IndexExcluded) -> api::Entity {
+pub(crate) fn convert_entity(
+    project_name: &str,
+    entity: Entity,
+    index_excluded: IndexExcluded,
+) -> api::Entity {
     let key = convert_key(project_name, &entity.key);
     let properties = match entity.clone().properties {
         Value::EntityValue(properties) => properties,
@@ -458,63 +573,132 @@ pub(crate) fn convert_entity(project_name: &str, entity: Entity, index_excluded:
     let properties = properties
         .into_iter()
         .map(|(k, v)| {
-            let index_excluded = IndexExcluded::ckeck_value(index_excluded.to_owned(), entity.key.get_kind().to_owned(), k.to_owned());
-            (k, convert_value(project_name, v, index_excluded))
-        }
-        ).collect();
-    api::Entity {
-        key: Some(key),
-        properties,
-    }
+            let path_excluded = IndexExcluded::ckeck_value(
+                index_excluded.to_owned(),
+                entity.key.get_kind().to_owned(),
+                k.to_owned(),
+            );
+            (
+                k,
+                convert_value(
+                    project_name,
+                    v,
+                    path_excluded.to_vec(),
+                    check_exclude_from_indexes(path_excluded),
+                ),
+            )
+        })
+        .collect();
+    api::Entity { key: Some(key), properties }
 }
 
-pub(crate) fn convert_value(project_name: &str, value: Value, index_excluded: bool) -> api::Value {
+pub(crate) fn convert_value(
+    project_name: &str,
+    value: Value,
+    path_excluded: Vec<String>,
+    index_excluded: bool,
+) -> api::Value {
     api::Value {
         meaning: 0,
-        exclude_from_indexes: index_excluded,
-        value_type: Some(convert_value_type(project_name, value, index_excluded)),
+        exclude_from_indexes: match value.to_owned() {
+            Value::OptionValue(val) => match val {
+                Some(v) => match *v {
+                    Value::ArrayValue(_) => false,
+                    _ => index_excluded,
+                },
+                None => index_excluded,
+            },
+            Value::ArrayValue(_) => false,
+            _ => index_excluded,
+        },
+        value_type: Some(convert_value_type(project_name, value, path_excluded, index_excluded)),
     }
 }
 
-fn convert_value_type(project_name: &str, value: Value, index_excluded: bool) -> api::value::ValueType {
+fn convert_value_type(
+    project_name: &str,
+    value: Value,
+    path_excluded: Vec<String>,
+    index_excluded: bool,
+) -> api::value::ValueType {
     match value {
         Value::OptionValue(val) => match val {
-            Some(v) => convert_value_type(project_name, *v, index_excluded),
+            Some(v) => convert_value_type(project_name, *v, path_excluded, index_excluded),
             None => api::value::ValueType::NullValue(0),
         },
         Value::BooleanValue(val) => api::value::ValueType::BooleanValue(val),
         Value::IntegerValue(val) => api::value::ValueType::IntegerValue(val),
         Value::DoubleValue(val) => api::value::ValueType::DoubleValue(val),
-        Value::TimestampValue(val) => api::value::ValueType::TimestampValue(prost_types::Timestamp {
-            seconds: val.timestamp(),
-            nanos: val.timestamp_subsec_nanos() as i32,
-        }),
+        Value::TimestampValue(val) => {
+            api::value::ValueType::TimestampValue(prost_types::Timestamp {
+                seconds: val.and_utc().timestamp(),
+                nanos: val.and_utc().timestamp_subsec_nanos() as i32,
+            })
+        }
         Value::KeyValue(key) => api::value::ValueType::KeyValue(convert_key(project_name, &key)),
         Value::StringValue(val) => api::value::ValueType::StringValue(val),
         Value::BlobValue(val) => api::value::ValueType::BlobValue(val),
-        Value::GeoPointValue(latitude, longitude) => api::value::ValueType::GeoPointValue(api::LatLng {
-            latitude,
-            longitude,
-        }),
+        Value::GeoPointValue(latitude, longitude) => {
+            api::value::ValueType::GeoPointValue(api::LatLng { latitude, longitude })
+        }
         Value::EntityValue(properties) => api::value::ValueType::EntityValue({
             api::Entity {
                 key: None,
                 properties: properties
                     .into_iter()
-                    .map(|(k, v)| (k, convert_value(project_name, v, index_excluded)))
+                    .map(|(k, v)| {
+                        let new_list_excluded =
+                            get_exclude_from_indexes(path_excluded.to_vec(), k.to_owned());
+                        (
+                            k.to_owned(),
+                            convert_value(
+                                project_name,
+                                v,
+                                new_list_excluded.to_vec(),
+                                check_exclude_from_indexes(new_list_excluded.to_vec()),
+                            ),
+                        )
+                    })
                     .collect(),
             }
         }),
         Value::ArrayValue(values) => api::value::ValueType::ArrayValue(api::ArrayValue {
             values: values
                 .into_iter()
-                .map(|value| convert_value(project_name, value, index_excluded))
+                .map(|value| {
+                    convert_value(project_name, value, path_excluded.to_vec(), index_excluded)
+                })
                 .collect(),
         }),
     }
 }
 
-pub(crate) fn convert_filter(project_name: &str, filters: Vec<Filter>) -> Option<api::Filter> {
+fn get_exclude_from_indexes(list_excluded: Vec<String>, property: String) -> Vec<String> {
+    list_excluded
+        .to_vec()
+        .into_iter()
+        .filter_map(|element| {
+            element
+                .split_once(".")
+                .or(Some((element.as_str(), "")))
+                .filter(|(first, _)| first.to_string() == property)
+                .map(|(_, rest)| rest.to_string())
+        })
+        .collect::<Vec<String>>()
+}
+
+fn check_exclude_from_indexes(list_excluded: Vec<String>) -> bool {
+    match list_excluded.len() == 1 {
+        true => list_excluded.first().unwrap() == "",
+        false => false,
+    }
+}
+
+pub(crate) fn convert_filter(
+    project_name: &str,
+    filters: Vec<Filter>,
+    composite_filter: CompositeFilter,
+) -> Option<api::Filter> {
     use api::filter::FilterType;
 
     if !filters.is_empty() {
@@ -525,10 +709,16 @@ pub(crate) fn convert_filter(project_name: &str, filters: Vec<Filter>) -> Option
                 let (name, op, value) = match filter {
                     Filter::Equal(name, value) => (name, Operator::Equal, value),
                     Filter::GreaterThan(name, value) => (name, Operator::GreaterThan, value),
-                    Filter::LesserThan(name, value) => (name, Operator::LessThan, value),
-                    Filter::GreaterThanOrEqual(name, value) => (name, Operator::GreaterThanOrEqual, value),
-                    Filter::LesserThanEqual(name, value) => (name, Operator::LessThanOrEqual, value),
-                    Filter::HasAncestor(value) => ("__key__".to_string(), Operator::HasAncestor, value),
+                    Filter::LessThan(name, value) => (name, Operator::LessThan, value),
+                    Filter::GreaterThanOrEqual(name, value) => {
+                        (name, Operator::GreaterThanOrEqual, value)
+                    }
+                    Filter::LessThanOrEqual(name, value) => {
+                        (name, Operator::LessThanOrEqual, value)
+                    }
+                    Filter::HasAncestor(value) => {
+                        ("__key__".to_string(), Operator::HasAncestor, value)
+                    }
                     Filter::In(name, value) => (name, Operator::In, value),
                     Filter::NotIn(name, value) => (name, Operator::NotIn, value),
                     Filter::NotEqual(name, value) => (name, Operator::NotEqual, value),
@@ -538,7 +728,7 @@ pub(crate) fn convert_filter(project_name: &str, filters: Vec<Filter>) -> Option
                     filter_type: Some(FilterType::PropertyFilter(api::PropertyFilter {
                         op: op as i32,
                         property: Some(api::PropertyReference { name }),
-                        value: Some(convert_value(project_name, value, false)),
+                        value: Some(convert_value(project_name, value, vec![], false)),
                     })),
                 }
             })
@@ -546,7 +736,10 @@ pub(crate) fn convert_filter(project_name: &str, filters: Vec<Filter>) -> Option
 
         Some(api::Filter {
             filter_type: Some(FilterType::CompositeFilter(api::CompositeFilter {
-                op: api::composite_filter::Operator::And as i32,
+                op: match composite_filter {
+                    CompositeFilter::And => api::composite_filter::Operator::And as i32,
+                    CompositeFilter::Or => api::composite_filter::Operator::Or as i32,
+                },
                 filters,
             })),
         })

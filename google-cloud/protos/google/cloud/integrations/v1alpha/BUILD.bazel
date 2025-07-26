@@ -55,7 +55,7 @@ load(
 go_proto_library(
     name = "integrations_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
-    importpath = "google.golang.org/genproto/googleapis/cloud/integrations/v1alpha",
+    importpath = "cloud.google.com/go/integrations/apiv1alpha/integrationspb",
     protos = [":integrations_proto"],
     deps = [
         "//google/api:annotations_go_proto",
@@ -97,7 +97,6 @@ py_grpc_library(
 ##############################################################################
 load(
     "@com_google_googleapis_imports//:imports.bzl",
-    "php_grpc_library",
     "php_proto_library",
 )
 
@@ -106,21 +105,9 @@ php_proto_library(
     deps = [":integrations_proto"],
 )
 
-php_grpc_library(
-    name = "integrations_php_grpc",
-    srcs = [":integrations_proto"],
-    deps = [":integrations_php_proto"],
-)
-
 ##############################################################################
 # Node.js
 ##############################################################################
-load(
-    "@com_google_googleapis_imports//:imports.bzl",
-    "nodejs_gapic_assembly_pkg",
-    "nodejs_gapic_library",
-)
-
 
 ##############################################################################
 # Ruby

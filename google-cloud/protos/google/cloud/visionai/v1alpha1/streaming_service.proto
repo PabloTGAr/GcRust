@@ -23,7 +23,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Google.Cloud.VisionAI.V1Alpha1";
-option go_package = "google.golang.org/genproto/googleapis/cloud/visionai/v1alpha1;visionai";
+option go_package = "cloud.google.com/go/visionai/apiv1alpha1/visionaipb;visionaipb";
 option java_multiple_files = true;
 option java_outer_classname = "StreamingServiceProto";
 option java_package = "com.google.cloud.visionai.v1alpha1";
@@ -333,42 +333,6 @@ message ReceivePacketsRequest {
     // This request checkpoints the consumer's read progress.
     CommitRequest commit_request = 7;
   }
-
-  // Metadata that the server needs to know where to read the packets from.
-  //
-  SeriesMetadata series_metadata = 1;
-
-  // To start receiving packets, client has to provide a unique consumer name.
-  // If the consumer name was duplicated, the stream server will reject the
-  // request.
-  //
-  string consumer = 2;
-
-  // The configuration for the consumer to reset its offset. If this field is
-  // not set, the existing consumers will resume its consumption from where it
-  // stopped previously; otherwise a new consumer it will consume from the
-  // latest packet in the stream.
-  //
-  OffsetConfig offset_config = 3;
-
-  // If this value is specified, the stream server will stop the streaming gRPC
-  // connection if no new packet is available for a duration longer than the
-  // `timeout` here. Otherwise, the stream server will block until a packet is
-  // available.
-  //
-  google.protobuf.Duration timeout = 4;
-
-  // Request metadata is the metadata of the ReceivePacketRequest.
-  //
-  RequestMetadata metadata = 5;
-}
-
-// Response metadata message.
-//
-message ResponseMetadata {
-  // If the EOS is on, the client should not expect more packets from the
-  // server.
-  bool end_of_stream = 1;
 }
 
 // Control message for a ReceivePacketsResponse.
@@ -400,44 +364,6 @@ message ReceivePacketsResponse {
 
     // A control message from the server.
     ReceivePacketsControlResponse control = 3;
-
-    // Response metadata message.
-    //
-    ResponseMetadata metadata = 2;
-  }
-}
-
-// Configuration used by consumers to reset its offset.
-message OffsetConfig {
-  // SpecialOffset is a set of predefined special offset configuration.
-  enum SpecialOffset {
-    // Offset not specified.
-    SPECIAL_OFFSET_UNSPECIFIED = 0;
-
-    // Beginning of the stream.
-    OFFSET_BEGINNING = 1;
-
-    // End of the stream.
-    OFFSET_END = 2;
-  }
-
-  // Offset config.
-  oneof config {
-    // The start consuming from the earliest or latest position.
-    SpecialOffset special_offset = 1;
-
-    // The offset position that the consumer wants to set to. The consumer can
-    // specify a position in the stream and start consuming from there. If the
-    // packet for the `seek_position` is not a critical frame, the consumer will
-    // receive the latest critical packet prior to the that in the
-    // `seek_position`.
-    int64 seek_position = 2;
-
-    // The consumer will start consuming from the latest packet that is earlier
-    // than the `seek_time`. If the packet for the `seek_time` is not a critical
-    // frame, the consumer will receive the latest critical packet prior to the
-    // `seek_time`.
-    google.protobuf.Timestamp seek_time = 3;
   }
 }
 

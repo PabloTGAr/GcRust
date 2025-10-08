@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package google.maps.addressvalidation.v1;
 
 option cc_enable_arenas = true;
 option csharp_namespace = "Google.Maps.AddressValidation.V1";
-option go_package = "google.golang.org/genproto/googleapis/maps/addressvalidation/v1;addressvalidation";
+option go_package = "cloud.google.com/go/maps/addressvalidation/apiv1/addressvalidationpb;addressvalidationpb";
 option java_multiple_files = true;
 option java_outer_classname = "UspsDataProto";
 option java_package = "com.google.maps.addressvalidation.v1";
@@ -56,7 +56,10 @@ message UspsAddress {
   string zip_code_extension = 9;
 }
 
-// The USPS data for the address.
+// The USPS data for the address. `uspsData` is not guaranteed to be fully
+// populated for every US or PR address sent to the Address Validation API. It's
+// recommended to integrate the backup address fields in the response if you
+// utilize uspsData as the primary part of the response.
 message UspsData {
   // USPS standardized address.
   UspsAddress standardized_address = 1;
@@ -125,8 +128,8 @@ message UspsData {
   string dpv_no_stat = 8;
 
   // The carrier route code.
-  // A four character code--a one letter prefix and a three digit route
-  // designator.
+  // A four character code consisting of a one letter prefix and a three digit
+  // route designator.
   //
   // Prefixes:
   //
@@ -210,7 +213,7 @@ message UspsData {
   // processing is suspended because of the detection of artificially created
   // addresses.
   //
-  // The USPS data fields may not be populated when this error is present.
+  // The USPS data fields might not be populated when this error is present.
   string error_message = 27;
 
   // Indicator that the request has been CASS processed.

@@ -31,7 +31,7 @@ import "google/rpc/status.proto";
 import "google/type/datetime.proto";
 
 option csharp_namespace = "Google.Cloud.VisionAI.V1Alpha1";
-option go_package = "google.golang.org/genproto/googleapis/cloud/visionai/v1alpha1;visionai";
+option go_package = "cloud.google.com/go/visionai/apiv1alpha1/visionaipb;visionaipb";
 option java_multiple_files = true;
 option java_outer_classname = "WarehouseProto";
 option java_package = "com.google.cloud.visionai.v1alpha1";
@@ -475,6 +475,11 @@ message CreateCorpusRequest {
 
   // Required. The corpus to be created.
   Corpus corpus = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Metadata for CreateCorpus API.
+message CreateCorpusMetadata {
+
 }
 
 // Corpus is a set of video contents for management. Within a corpus, videos
@@ -1408,13 +1413,6 @@ message GenerateHlsUriResponse {
 
 // Request message for SearchAssets.
 message SearchAssetsRequest {
-  // Sorting specification. If this field is not specified, by default:
-  // - STREAM_VIDEO: search results are sorted by the start time.
-  oneof sort_spec {
-    // Sort by the value under the data schema key.
-    SchemaKeySortingStrategy schema_key_sorting_strategy = 9;
-  }
-
   // Required. The parent corpus to search.
   // Form: `projects/{project_id}/locations/{location_id}/corpora/{corpus_id}'
   string corpus = 1 [
@@ -1454,40 +1452,10 @@ message SearchAssetsRequest {
   repeated string result_annotation_keys = 8;
 }
 
-// A strategy to specify how to sort by data schema key.
-message SchemaKeySortingStrategy {
-  // Option for one data schema key.
-  message Option {
-    // When one result has multiple values with the same key, specify
-    // which value is used to sort. By default, AGGREGATE_METHOD_LARGEST
-    // is used when results are sorted in decreasing order,
-    // AGGREGATE_METHOD_SMALLEST is used when results are sorted in
-    // incresing order.
-    enum AggregateMethod {
-      // The unspecified aggregate method will be overwritten as mentioned
-      // above.
-      AGGREGATE_METHOD_UNSPECIFIED = 0;
+// The metadata for DeleteAsset API that embeds in
+// [metadata][google.longrunning.Operation.metadata] field.
+message DeleteAssetMetadata {
 
-      // Take the (lexicographical or numerical) largest value to sort.
-      AGGREGATE_METHOD_LARGEST = 1;
-
-      // Take the (lexicographical or numerical) smallest value to sort.
-      AGGREGATE_METHOD_SMALLEST = 2;
-    }
-
-    // The data used to sort.
-    string data_schema_key = 1;
-
-    // Whether to sort in decreasing order or increasing order.
-    // By default, results are sorted in incresing order.
-    bool sort_decreasing = 2;
-
-    // Aggregate method for the current data schema key.
-    optional AggregateMethod aggregate_method = 3;
-  }
-
-  // Options in the front have high priority than those in the back.
-  repeated Option options = 1;
 }
 
 // Stores the criteria-annotation matching results for each search result item.
@@ -1683,10 +1651,3 @@ message Partition {
   // Partition of asset in space.
   SpatialPartition spatial_partition = 2;
 }
-
-// The metadata for DeleteAsset API that embeds in
-// [metadata][google.longrunning.Operation.metadata] field.
-message DeleteAssetMetadata {}
-
-// Metadata for CreateCorpus API.
-message CreateCorpusMetadata {}

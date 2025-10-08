@@ -1,7 +1,9 @@
+use super::{
+    api::{self, CommitRequest, Mutation, RollbackRequest},
+    convert_entity, convert_key, Aggregation, Client, FromValue, Key, Query, Value,
+};
+use crate::datastore::{Entity, Error, IntoEntity};
 use std::borrow::Borrow;
-use super::{Client, api::{CommitRequest, self, Mutation, RollbackRequest}, FromValue, Key, convert_key, convert_entity, Query};
-use crate::datastore::{
-    Entity, Error, IntoEntity};
 
 /// Structure where the data necessary to manage the transaction is stored
 ///     - client: The Datastore client
@@ -35,7 +37,9 @@ impl Transaction {
             commit_request: api::CommitRequest {
                 mutations: Vec::new(),
                 mode: api::commit_request::Mode::Transactional as i32,
-                transaction_selector: Some(api::commit_request::TransactionSelector::Transaction(tx_key.to_vec())),
+                transaction_selector: Some(api::commit_request::TransactionSelector::Transaction(
+                    tx_key.to_vec(),
+                )),
                 database_id: "".to_string(),
                 project_id: project_name,
             },
@@ -62,17 +66,16 @@ impl Transaction {
         Ok(self.client.get_all_run(keys, Some(self.tx_key.to_vec())).await?)
     }
 
-    /// Create, Modify or delete entity and returns its key.
+    /// Create or Modify entity and returns its key.
     /// the Key can be marked as:
     ///     - newId
-    ///     - delete
     /// If id is not indicated, it will be incomplete and, by default, a new entity will be created.
-    /// 
-    /// This method can be called more than once for the same transaction, because the different 
-    /// types of mutations are accumulated to subsequently execute the commit, which will send all 
+    ///
+    /// This method can be called more than once for the same transaction, because the different
+    /// types of mutations are accumulated to subsequently execute the commit, which will send all
     /// the information and return the Datastore response.
-    /// 
-    /// Different types of mutations can be mixed in the same transaction (creation, modification and deletion)
+    ///
+    /// Different types of mutations can be mixed in the same transaction (creation and modification)
     pub async fn put(&mut self, entity: impl IntoEntity) -> Result<(), Error> {
         let entity = entity.into_entity()?;
         self.put_all(Some(entity)).await?;
@@ -85,32 +88,24 @@ impl Transaction {
         I: IntoIterator<Item = T>,
         T: IntoEntity,
     {
-        let entities: Vec<Entity> = entities
-            .into_iter()
-            .map(IntoEntity::into_entity)
-            .collect::<Result<_, _>>()?;
+        let entities: Vec<Entity> =
+            entities.into_iter().map(IntoEntity::into_entity).collect::<Result<_, _>>()?;
 
         let mutations = entities
             .into_iter()
             .map(|entity| {
-                let operation = match entity.key.delete {
-                    true => {
-                        let key = convert_key(self.client.project_name.as_str(), entity.key.borrow());
-                        Some(api::mutation::Operation::Delete(key))
-                    },
-                    false => {
-                        let is_incomplete = entity.key.is_new || entity.key.is_incomplete();
-                        let entity = convert_entity(self.client.project_name.as_str(), entity, self.client.index_excluded.to_owned());
-                        match is_incomplete {
-                            true => Some(api::mutation::Operation::Insert(entity)),
-                            false => Some(api::mutation::Operation::Upsert(entity)),
-                        }
-                    },
+                let is_incomplete = entity.key.is_new || entity.key.is_incomplete();
+                let entity = convert_entity(
+                    self.client.project_name.as_str(),
+                    entity,
+                    self.client.index_excluded.to_owned(),
+                );
+                let operation = match is_incomplete {
+                    true => Some(api::mutation::Operation::Insert(entity)),
+                    false => Some(api::mutation::Operation::Upsert(entity)),
                 };
-                api::Mutation {
-                    operation,
-                    conflict_detection_strategy: None,
-                }
+
+                api::Mutation { operation, conflict_detection_strategy: None }
             })
             .collect::<Vec<Mutation>>();
 
@@ -119,10 +114,59 @@ impl Transaction {
         Ok(())
     }
 
-    /// Execute a (potentially) complex query against the Datastore 
+    /// Create, Modify or delete entity and returns its key.
+    /// the Key can be marked as:
+    ///     - newId
+    ///     - delete
+    /// If id is not indicated, it will be incomplete and, by default, a new entity will be created.
+    ///
+    /// This method can be called more than once for the same transaction, because the different
+    /// types of mutations are accumulated to subsequently execute the commit, which will send all
+    /// the information and return the Datastore response.
+    ///
+    /// Different types of mutations can be mixed in the same transaction (creation, modification and deletion)
+    pub async fn delete(&mut self, key: impl Borrow<Key>) -> Result<(), Error> {
+        self.delete_all(Some(key.borrow())).await
+    }
+
+    /// Same operation as the put method but with multiple entities.
+    pub async fn delete_all<T, I>(&mut self, keys: I) -> Result<(), Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Borrow<Key>,
+    {
+        let mutations = keys
+            .into_iter()
+            .map(|key| api::Mutation {
+                operation: Some(api::mutation::Operation::Delete(convert_key(
+                    self.client.project_name.as_str(),
+                    key.borrow(),
+                ))),
+                conflict_detection_strategy: None,
+            })
+            .collect::<Vec<Mutation>>();
+
+        self.commit_request.mutations.append(&mut mutations.to_vec());
+
+        Ok(())
+    }
+
+    /// Execute a (potentially) complex query against the Datastore
     /// in a transaction and return the results.
     pub async fn query(&mut self, query: Query) -> Result<(Vec<Entity>, Vec<u8>), Error> {
         Ok(self.client.query_run(query, Some(self.tx_key.to_vec())).await?)
+    }
+
+    /// Runs a (potentially) complex query againt Datastore and returns the results.
+    pub async fn aggregation_query(
+        &mut self,
+        aggregations: Vec<Aggregation>,
+        query: Query,
+    ) -> Result<Vec<Value>, Error> {
+        Ok(self
+            .client
+            .aggregation_query_run(aggregations, query, Some(self.tx_key.to_vec()))
+            .await?)
     }
 
     /// Execute the transaction with the accumulated information.
@@ -132,24 +176,24 @@ impl Transaction {
         let response = self.client.service.commit(request).await?;
 
         let response = response.into_inner();
-        let keys = response
-            .mutation_results
-            .into_iter()
-            .map(|result| result.key.map(Key::from))
-            .collect();
+        let keys =
+            response.mutation_results.into_iter().map(|result| result.key.map(Key::from)).collect();
 
         Ok(keys)
     }
 
     /// Execute transaction rollback
     pub async fn rollback(&mut self) -> Result<(), Error> {
-        let request = self.client.construct_request(RollbackRequest {
-            database_id: "".to_string(),
-            project_id: self.client.project_name.to_owned(),
-            transaction: self.tx_key.to_vec()
-        }).await?;
+        let request = self
+            .client
+            .construct_request(RollbackRequest {
+                database_id: "".to_string(),
+                project_id: self.client.project_name.to_owned(),
+                transaction: self.tx_key.to_vec(),
+            })
+            .await?;
         self.client.service.rollback(request).await?;
-        
+
         Ok(())
     }
 }

@@ -1,7 +1,7 @@
 use std::fmt;
 
-use chrono::offset::Utc;
 use chrono::DateTime;
+use chrono::{offset::Utc, TimeDelta};
 use hyper::client::{Client, HttpConnector};
 use hyper_rustls::HttpsConnector;
 use json::json;
@@ -80,7 +80,7 @@ impl TokenManager {
     }
 
     pub(crate) async fn token(&mut self) -> Result<String, AuthError> {
-        let hour = chrono::Duration::minutes(45);
+        let hour = TimeDelta::try_minutes(45).unwrap();
         let current_time = chrono::Utc::now();
         match self.current_token {
             Some(ref token) if token.expiry >= current_time => Ok(token.value.to_string()),

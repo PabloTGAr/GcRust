@@ -72,7 +72,7 @@ pub struct Key {
     pub(crate) kind: String,
     pub(crate) id: KeyID,
     pub(crate) is_new: bool,
-    pub(crate) delete: bool,
+    // pub(crate) delete: bool,
     pub(crate) parent: Option<Box<Key>>,
     pub(crate) namespace: Option<String>,
 }
@@ -89,7 +89,7 @@ impl Key {
             kind: kind.into(),
             id: KeyID::Incomplete,
             is_new: false,
-            delete: false,
+            // delete: false,
             parent: None,
             namespace: None,
         }
@@ -142,16 +142,16 @@ impl Key {
         self
     }
 
-    /// Mark as delete Entity and the client send like DELETE.
-    ///
-    /// ```
-    /// # use google_cloud::datastore::Key;
-    /// let key = key.mark_new_entity();
-    /// ```
-    pub fn delete(mut self) -> Key {
-        self.delete = true;
-        self
-    }
+    // /// Mark as delete Entity and the client send like DELETE.
+    // ///
+    // /// ```
+    // /// # use google_cloud::datastore::Key;
+    // /// let key = key.mark_new_entity();
+    // /// ```
+    // pub fn delete(mut self) -> Key {
+    //     self.delete = true;
+    //     self
+    // }
 
     /// Get the key's ID.
     ///

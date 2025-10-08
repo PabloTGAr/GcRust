@@ -22,7 +22,7 @@ import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
 option csharp_namespace = "Google.Cloud.Retail.V2Beta";
-option go_package = "google.golang.org/genproto/googleapis/cloud/retail/v2beta;retail";
+option go_package = "cloud.google.com/go/retail/apiv2beta/retailpb;retailpb";
 option java_multiple_files = true;
 option java_outer_classname = "ExportConfigProto";
 option java_package = "com.google.cloud.retail.v2beta";
@@ -81,10 +81,14 @@ message ExportUserEventsResponse {
   OutputResult output_result = 3;
 }
 
-// Output result.
+// Output result that stores the information about where the exported data is
+// stored.
 message OutputResult {
-  // Export result in BigQuery.
+  // The BigQuery location where the result is stored.
   repeated BigQueryOutputResult bigquery_result = 1;
+
+  // The Google Cloud Storage location where the result is stored.
+  repeated GcsOutputResult gcs_result = 2;
 }
 
 // A BigQuery output result.
@@ -94,4 +98,10 @@ message BigQueryOutputResult {
 
   // The ID of a BigQuery Table.
   string table_id = 2;
+}
+
+// A Gcs output result.
+message GcsOutputResult {
+  // The uri of Gcs output
+  string output_uri = 1;
 }
